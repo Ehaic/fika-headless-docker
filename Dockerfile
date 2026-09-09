@@ -1,4 +1,4 @@
-FROM debian:bookworm-slim AS base
+FROM debian:trixie-slim AS base
 USER root
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -44,7 +44,7 @@ RUN apt-get update \
     xvfb
 
 # Build wine-tkg-ntsync
-FROM debian:bookworm AS wine-builder
+FROM debian:trixie AS wine-builder
 
 USER root
 WORKDIR /opt
@@ -122,7 +122,7 @@ ENV WINE_BIN_PATH=/wine-ge/bin
 # This is required to run wineboot properly
 RUN sudo mkdir -pm755 /etc/apt/keyrings \
     && sudo wget -O /etc/apt/keyrings/winehq-archive.key https://dl.winehq.org/wine-builds/winehq.key \
-    && sudo wget -NP /etc/apt/sources.list.d/ https://dl.winehq.org/wine-builds/debian/dists/bookworm/winehq-bookworm.sources \
+    && sudo wget -NP /etc/apt/sources.list.d/ https://dl.winehq.org/wine-builds/debian/dists/trixie/winehq-trixie.sources \
     && dpkg --add-architecture i386 \
     && apt-get update \
     && DEBIAN_FRONTEND="noninteractive" apt-get install -y --install-recommends winehq-${WINE_BRANCH} zstd libc-bin libc6 \
