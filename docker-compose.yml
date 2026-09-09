@@ -4,9 +4,9 @@
 services:
   # SPT Server container
   spt_server:
-    # See https://github.com/zhliau/fika-spt-server-docker
-    # This is my own SPT server image, but you can choose to use any other working SPT docker image
-    image: ghcr.io/zhliau/fika-spt-server-docker:latest
+    # See https://github.com/Ehaic/fika-spt-server-docker
+    # This is my own SPT server image (sp-tushonka SPT 4.1.x compatible), but you can choose to use any other working SPT docker image
+    image: ghcr.io/ehaic/fika-spt-server-docker:latest
     container_name: spt_server
     volumes:
       # I like to mount my server files from the host into the container so I can easily add/change mods
@@ -21,7 +21,7 @@ services:
       retries: 3
       start_period: 60s
     restart: unless-stopped
- 
+
   # Dedicated client container
   fika_dedi:
     image: ghcr.io/zhliau/fika-headless-docker:latest
@@ -34,6 +34,16 @@ services:
       # Use service name from above, docker-compose resolves this to the SPT server container
       - SERVER_URL=spt_server
       - SERVER_PORT=6969
+      # NarcoNet sync: keep client mods in lockstep with the server.
+      # Requires the NarcoNet client plugin in the client's BepInEx/plugins
+      # (the server's NarcoNet sync profile will serve it on first connect,
+      # or install it manually from the NarcoNet release zip).
+      - USE_NARCONET=true
+      # Optional: only needed if the syncer cannot infer it (it infers
+      # "headless" from the Fika headless plugin automatically)
+      # - NARCONET_PROFILE=headless
+      # Optional: extra CLI args for the syncer, e.g. --delete-removed
+      # - NARCONET_SYNC_ARGS=--delete-removed
     # Wait to start the dedicated client until the server is healthy
     depends_on:
       spt_server:

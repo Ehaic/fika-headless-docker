@@ -27,6 +27,10 @@ pelican=${PELICAN:-false}
 port=${PORT:-6969} # Pelican overwrites the environment variable SERVER_PORT so we need to make another one available)
 https=${HTTPS:-true}
 proto=https
+use_narconet=${USE_NARCONET:-false}
+narconet_profile=${NARCONET_PROFILE:-headless}
+narconet_sync_bin=${NARCONET_SYNC_BIN:-}
+narconet_sync_args=${NARCONET_SYNC_ARGS:-}
 
 xlockfile=/tmp/.X0-lock
 # Overriden if you use DGPU
@@ -129,6 +133,36 @@ start_crond() {
     /etc/init.d/cron start
 }
 
+# Locate the narconetsync binary shipped with the NarcoNet BepInEx plugin.
+# The filename embeds the release version (e.g. narconetsync-linux-amd64), so
+# glob rather than hardcode; NARCONET_SYNC_BIN wins if the user sets it.
+find_narconet_sync_bin() {
+    if [ -n "$narconet_sync_bin" ]; then
+        echo "$narconet_sync_bin"
+        return 0
+    fi
+    find "$eft_dir/BepInEx/plugins" -maxdepth 3 -type f -name 'narconetsync-linux-*' 2>/dev/null | head -n1
+}
+
+# Run the NarcoNet native syncer before the client starts, while nothing
+# holds the synced files open. The syncer reads SERVER_URL/SERVER_PORT itself,
+# infers the headless profile from the Fika headless plugin, and refuses to
+# sync if the server did not apply the profile (rather than pushing
+# player-only mods that would break raid hosting).
+run_narconet_sync() {
+    local sync_bin
+    sync_bin=$(find_narconet_sync_bin)
+    if [ -z "$sync_bin" ]; then
+        echo "NarcoNet: narconetsync-linux-* not found under $eft_dir/BepInEx/plugins"
+        echo "NarcoNet: install the NarcoNet client plugin (or set NARCONET_SYNC_BIN) and restart"
+        return 1
+    fi
+    chmod +x "$sync_bin" 2>/dev/null || true
+    echo "Running NarcoNet sync: $sync_bin"
+    # shellcheck disable=SC2086
+    NARCONET_PROFILE="$narconet_profile" "$sync_bin" $narconet_sync_args
+}
+
 # Accepts EFT client PID as first arg
 raid_end_routine() {
     echo "Starting BepInEx/LogOutput.log watch for auto-restart on raid end"
@@ -152,7 +186,7 @@ init_pelican_wineprefix() {
     echo "Creating wineprefix for pelican"
     export WINEPREFIX=/home/container/.wine
     cp -r -u /.wine /home/container
-    chown -R $(whoami) /home/container/.wine
+    chown -R "$(whoami)" /home/container/.wine
 }
 
 # Main client function. Should block until client has exited
@@ -160,6 +194,10 @@ init_pelican_wineprefix() {
 # via watching for raid end (if autorestart is enabled)
 # or via watching the PID
 run_client() {
+    if [[ "$use_narconet" == "true" ]]; then
+        run_narconet_sync || echo "NarcoNet sync failed, starting client anyway" >&2
+    fi
+
     if [[ "$pelican" == "true" ]]; then
         use_pelican
         # Assign the value from 'port' (which includes the default logic) to SERVER_PORT because Pelican overwrites the environment variable SERVER_PORT at runtime.
@@ -210,9 +248,9 @@ if [[ "$ENABLE_LOG_PURGE" == "true" ]]; then
 fi
 
 run_xvfb
-if [[ "$USE_MODSYNC" == "true" || "$AUTO_RESTART_ON_RAID_END" == "true" ]]; then
+if [[ "$USE_MODSYNC" == "true" || "$AUTO_RESTART_ON_RAID_END" == "true" || "$use_narconet" == "true" ]]; then
     while true; do
-        # Anticipate the client exiting due to modsync or raid end, and restart it
+        # Anticipate the client exiting due to narconet sync, modsync, or raid end, and restart it
         run_client
         echo "Dedi client closed with exit code $?. Restarting.." >&2
         sleep 5
