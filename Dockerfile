@@ -3,8 +3,13 @@ USER root
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-ENV NVIDIA_DRIVER_CAPABILITIES=all
-ENV NVIDIA_VISIBLE_DEVICES=all
+# GPU enablement happens at RUNTIME via compose (NVIDIA_VISIBLE_DEVICES=all +
+# NVIDIA_DRIVER_CAPABILITIES=all + runtime: nvidia), NOT here. If these image
+# ENVs are set on a host whose docker daemon routes build containers through
+# the nvidia runtime (e.g. default-runtime: nvidia), every RUN step gets
+# driver lib injection that breaks Xvfb/wine during prefix setup.
+ENV NVIDIA_DRIVER_CAPABILITIES=""
+ENV NVIDIA_VISIBLE_DEVICES="void"
 
 # Set the timezone
 RUN ln -fs /usr/share/zoneinfo/Etc/UTC /etc/localtime && \

@@ -337,6 +337,7 @@ $ VERSION=0.1 ./build
 If you want to pass in your host Nvidia GPU, make sure you have the following:
 - set the env var `USE_DGPU=true` in the container
 - set the env var `USE_GRAPHICS=true` to disable headless mode
+- set the env vars `NVIDIA_VISIBLE_DEVICES=all` and `NVIDIA_DRIVER_CAPABILITIES=all` in the container (the image no longer bakes these in — build-time GPU injection breaks the wineprefix setup)
 - `nvidia-container-toolkit` installed on your host
 - set the `deploy` section in compose.
 - No X server running on host
@@ -359,6 +360,9 @@ services:
       - USE_DGPU=true
       # Do not run headless
       - USE_GRAPHICS=true
+      # Required for GPU passthrough since the image no longer bakes these in
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
     ports:
       - 25565:25565/udp
     # Specify nvidia device to pass to the container

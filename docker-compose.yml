@@ -44,6 +44,14 @@ services:
       # - NARCONET_PROFILE=headless
       # Optional: extra CLI args for the syncer, e.g. --delete-removed
       # - NARCONET_SYNC_ARGS=--delete-removed
+    # Uncomment for the optional Nvidia GPU support (see Features above).
+    # The image no longer bakes NVIDIA_* env vars — set them here so the
+    # nvidia runtime injects your GPU at runtime. Requires nvidia-container-toolkit
+    # and `runtime: nvidia` (or default-runtime: nvidia on the daemon).
+    # environment:
+    #   - NVIDIA_VISIBLE_DEVICES=all
+    #   - NVIDIA_DRIVER_CAPABILITIES=all
+    # runtime: nvidia
     # Wait to start the dedicated client until the server is healthy
     depends_on:
       spt_server:
