@@ -134,14 +134,17 @@ RUN sudo mkdir -pm755 /etc/apt/keyrings \
     && rm -rf /var/lib/apt/lists/*
 
 # Install wineprefix deps
-RUN xvfb-run -a sh -c 'winecfg && wineboot --update && winetricks -q arial times'
+# NOTE: prefix init (winecfg/wineboot) must run WITHOUT a display — with one,
+# wine 11 stalls 300s on the boot event and the prefix ends up broken. The
+# winetricks verbs that launch real installers DO need the Xvfb display.
+RUN winecfg && wineboot --update && xvfb-run -a winetricks -q arial times
 # Cache vcredist installer direct from MS to bypass downloading from web.archive.org
 RUN mkdir -p /.cache/winetricks/ucrtbase2019
 RUN curl -SL 'https://download.visualstudio.microsoft.com/download/pr/85d47aa9-69ae-4162-8300-e6b7e4bf3cf3/14563755AC24A874241935EF2C22C5FCE973ACB001F99E524145113B2DC638C1/VC_redist.x86.exe' \
     -o /.cache/winetricks/ucrtbase2019/VC_redist.x86.exe
 RUN curl -SL 'https://download.visualstudio.microsoft.com/download/pr/85d47aa9-69ae-4162-8300-e6b7e4bf3cf3/52B196BBE9016488C735E7B41805B651261FFA5D7AA86EB6A1D0095BE83687B2/VC_redist.x64.exe' \
     -o /.cache/winetricks/ucrtbase2019/VC_redist.x64.exe
-RUN xvfb-run -a sh -c 'winecfg && wineboot --update && winetricks -q vcrun2019 dotnetdesktop8'
+RUN winecfg && wineboot --update && xvfb-run -a winetricks -q vcrun2019 dotnetdesktop8
 
 COPY ./scripts/purge_logs.sh /usr/bin/purge_logs
 COPY ./data/cron/cron_purge_logs /opt/cron/cron_purge_logs
