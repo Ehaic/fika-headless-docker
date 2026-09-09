@@ -1,10 +1,15 @@
-FROM debian:bookworm-slim AS base
+FROM debian:trixie-slim AS base
 USER root
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-ENV NVIDIA_DRIVER_CAPABILITIES=all
-ENV NVIDIA_VISIBLE_DEVICES=all
+# GPU enablement happens at RUNTIME via compose (NVIDIA_VISIBLE_DEVICES=all +
+# NVIDIA_DRIVER_CAPABILITIES=all + runtime: nvidia), NOT here. If these image
+# ENVs are set on a host whose docker daemon routes build containers through
+# the nvidia runtime (e.g. default-runtime: nvidia), every RUN step gets
+# driver lib injection that breaks Xvfb/wine during prefix setup.
+ENV NVIDIA_DRIVER_CAPABILITIES=""
+ENV NVIDIA_VISIBLE_DEVICES="void"
 
 # Set the timezone
 RUN ln -fs /usr/share/zoneinfo/Etc/UTC /etc/localtime && \
@@ -44,7 +49,7 @@ RUN apt-get update \
     xvfb
 
 # Build wine-tkg-ntsync
-FROM debian:bookworm AS wine-builder
+FROM debian:trixie AS wine-builder
 
 USER root
 WORKDIR /opt
@@ -52,7 +57,12 @@ RUN dpkg --add-architecture i386 && apt update
 RUN apt install -y aptitude curl git tar
 RUN aptitude remove -y '?narrow(?installed,?version(deb.sury.org))'
 RUN curl --create-dirs -o /usr/include/linux/ntsync.h https://raw.githubusercontent.com/torvalds/linux/13845bdc869f136f92ad3d40ea09b867bb4ce467/include/uapi/linux/ntsync.h
-RUN git clone https://github.com/Frogging-Family/wine-tkg-git.git wine-tkg-ntsync
+# Pinned so the builder layer stays cacheable and builds are reproducible.
+# Bump deliberately (and expect one slow rebuild) when you want a wine update.
+# af63244f18 = master as of 2026-09-08, validated building clean.
+ARG WINE_TKG_REF=af63244f18
+RUN git clone https://github.com/Frogging-Family/wine-tkg-git.git wine-tkg-ntsync \
+    && cd wine-tkg-ntsync && git checkout "${WINE_TKG_REF}"
 
 WORKDIR /opt/wine-tkg-ntsync/
 # Temporarily fix build failure ever since pulling from upstream wine-tkg-git
@@ -83,6 +93,11 @@ ENV LANG=en_US.UTF-8
 ENV HOME=/
 ENV WINEPREFIX=/.wine
 ENV WINEARCH=win64
+
+# Wine 10's Wayland driver requires this even when falling back to X11;
+# without it wineboot/winecfg fail with "XDG_RUNTIME_DIR is invalid or not set"
+ENV XDG_RUNTIME_DIR=/tmp/xdg
+RUN mkdir -p /tmp/xdg && chmod 700 /tmp/xdg
 
 WORKDIR /
 
@@ -117,21 +132,28 @@ ENV WINE_BIN_PATH=/wine-ge/bin
 # This is required to run wineboot properly
 RUN sudo mkdir -pm755 /etc/apt/keyrings \
     && sudo wget -O /etc/apt/keyrings/winehq-archive.key https://dl.winehq.org/wine-builds/winehq.key \
-    && sudo wget -NP /etc/apt/sources.list.d/ https://dl.winehq.org/wine-builds/debian/dists/bookworm/winehq-bookworm.sources \
+    && sudo wget -NP /etc/apt/sources.list.d/ https://dl.winehq.org/wine-builds/debian/dists/trixie/winehq-trixie.sources \
     && dpkg --add-architecture i386 \
     && apt-get update \
     && DEBIAN_FRONTEND="noninteractive" apt-get install -y --install-recommends winehq-${WINE_BRANCH} zstd libc-bin libc6 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install wineprefix deps
-RUN winecfg && wineboot --update && xvfb-run -a winetricks -q arial times
+# NOTE: prefix init (winecfg/wineboot) must run WITHOUT a display - with one,
+# wine 11 stalls 300s on the boot event and the prefix ends up broken.
+# Immediately after boot, windowed installers fail with nodrv_CreateWindow
+# until the wineserver settles (reproduced on slower hosts; fast machines
+# never see it) - a clean wineserver -k + brief pause fixes it deterministically.
+RUN winecfg && wineboot --update && wineserver -k && sleep 2 && \
+    xvfb-run -a winetricks -q arial times
 # Cache vcredist installer direct from MS to bypass downloading from web.archive.org
 RUN mkdir -p /.cache/winetricks/ucrtbase2019
 RUN curl -SL 'https://download.visualstudio.microsoft.com/download/pr/85d47aa9-69ae-4162-8300-e6b7e4bf3cf3/14563755AC24A874241935EF2C22C5FCE973ACB001F99E524145113B2DC638C1/VC_redist.x86.exe' \
     -o /.cache/winetricks/ucrtbase2019/VC_redist.x86.exe
 RUN curl -SL 'https://download.visualstudio.microsoft.com/download/pr/85d47aa9-69ae-4162-8300-e6b7e4bf3cf3/52B196BBE9016488C735E7B41805B651261FFA5D7AA86EB6A1D0095BE83687B2/VC_redist.x64.exe' \
     -o /.cache/winetricks/ucrtbase2019/VC_redist.x64.exe
-RUN winecfg && wineboot --update && xvfb-run -a winetricks -q vcrun2019 dotnetdesktop8
+RUN winecfg && wineboot --update && wineserver -k && sleep 2 && \
+    xvfb-run -a winetricks -q vcrun2019 dotnetdesktop8
 
 COPY ./scripts/purge_logs.sh /usr/bin/purge_logs
 COPY ./data/cron/cron_purge_logs /opt/cron/cron_purge_logs
