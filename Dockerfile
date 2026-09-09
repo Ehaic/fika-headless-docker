@@ -52,7 +52,12 @@ RUN dpkg --add-architecture i386 && apt update
 RUN apt install -y aptitude curl git tar
 RUN aptitude remove -y '?narrow(?installed,?version(deb.sury.org))'
 RUN curl --create-dirs -o /usr/include/linux/ntsync.h https://raw.githubusercontent.com/torvalds/linux/13845bdc869f136f92ad3d40ea09b867bb4ce467/include/uapi/linux/ntsync.h
-RUN git clone https://github.com/Frogging-Family/wine-tkg-git.git wine-tkg-ntsync
+# Pinned so the builder layer stays cacheable and builds are reproducible.
+# Bump deliberately (and expect one slow rebuild) when you want a wine update.
+# af63244f18 = master as of 2026-09-08, validated building clean.
+ARG WINE_TKG_REF=af63244f18
+RUN git clone https://github.com/Frogging-Family/wine-tkg-git.git wine-tkg-ntsync \
+    && cd wine-tkg-ntsync && git checkout "${WINE_TKG_REF}"
 
 WORKDIR /opt/wine-tkg-ntsync/
 # Temporarily fix build failure ever since pulling from upstream wine-tkg-git
